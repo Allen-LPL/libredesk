@@ -6,8 +6,9 @@ cd "$(dirname "$0")/.."
 compose=deploy/production/compose.yml
 config=deploy/production/config.toml
 env_example=deploy/production/.env.example
+generator=deploy/production/generate-env.sh
 
-for file in "$compose" "$config" "$env_example"; do
+for file in "$compose" "$config" "$env_example" "$generator"; do
   test -f "$file" || { echo "missing $file" >&2; exit 1; }
 done
 
@@ -69,4 +70,26 @@ abort "upload path must be persistent" unless config.include?("upload_path = '/l
 end
 
 puts "production compose checks passed"
+RUBY
+
+generated=$(mktemp)
+trap 'rm -f "$rendered" "$generated"' EXIT
+rm -f "$generated"
+bash "$generator" ghcr.io/allen-lpl/libredesk:sha-test "$generated"
+
+ruby - "$generated" <<'RUBY'
+values = File.readlines(ARGV[0], chomp: true).to_h do |line|
+  key, value = line.split("=", 2)
+  [key, value]
+end
+
+password = values.fetch("LIBREDESK_SYSTEM_USER_PASSWORD")
+abort "System password must contain uppercase" unless password.match?(/[A-Z]/)
+abort "System password must contain lowercase" unless password.match?(/[a-z]/)
+abort "System password must contain a number" unless password.match?(/[0-9]/)
+abort "System password must contain a special character" unless password.match?(/[^A-Za-z0-9]/)
+abort "System password must be 10-72 characters" unless (10..72).cover?(password.length)
+abort "encryption key must be exactly 32 characters" unless values.fetch("LIBREDESK_ENCRYPTION_KEY").length == 32
+
+puts "production secret generation checks passed"
 RUBY
