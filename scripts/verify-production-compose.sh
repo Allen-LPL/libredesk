@@ -56,6 +56,25 @@ abort "production config must trust X-Client-IP" unless config.include?('client_
 abort "secure cookies must remain enabled" unless config.include?("disable_secure_cookies = false")
 abort "upload path must be persistent" unless config.include?("upload_path = '/libredesk/uploads'")
 
+def active_config_keys(contents)
+  section = ""
+  contents.lines.map do |line|
+    stripped = line.strip
+    next if stripped.empty? || stripped.start_with?("#")
+    if stripped.match?(/^\[[^\]]+\]$/)
+      section = stripped
+      next
+    end
+    next unless stripped.include?("=")
+    "#{section}.#{stripped.split("=", 2).first.strip}"
+  end.compact
+end
+
+sample_keys = active_config_keys(File.read("config.sample.toml"))
+production_keys = active_config_keys(config)
+missing_keys = sample_keys - production_keys
+abort "production config is missing active sample keys: #{missing_keys.join(", ")}" unless missing_keys.empty?
+
 %w[
   LIBREDESK_IMAGE
   POSTGRES_PASSWORD
