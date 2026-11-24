@@ -1,0 +1,80 @@
+name: libredesk
+
+services:
+  app:
+    image: ${LIBREDESK_IMAGE:?LIBREDESK_IMAGE is required}
+    container_name: libredesk-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "100.64.0.27:9000:9000"
+    environment:
+      LIBREDESK_SYSTEM_USER_PASSWORD: ${LIBREDESK_SYSTEM_USER_PASSWORD:?LIBREDESK_SYSTEM_USER_PASSWORD is required}
+      LIBREDESK_APP__ENCRYPTION_KEY: ${LIBREDESK_ENCRYPTION_KEY:?LIBREDESK_ENCRYPTION_KEY is required}
+      LIBREDESK_DB__PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      LIBREDESK_REDIS__PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - sh
+      - -ec
+      - |
+        ./libredesk --install --idempotent-install --yes --config /libredesk/config.toml
+        ./libredesk --upgrade --yes --config /libredesk/config.toml
+        exec ./libredesk --config /libredesk/config.toml
+    volumes:
+      - ./config.toml:/libredesk/config.toml:ro
+      - ./uploads:/libredesk/uploads
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 5 -O /dev/null http://127.0.0.1:9000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  db:
+    image: postgres:17-alpine
+    container_name: libredesk-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: libredesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: libredesk
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U libredesk -d libredesk"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: libredesk-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    volumes:
+      - redis-data:/data
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping 2>/dev/null | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:

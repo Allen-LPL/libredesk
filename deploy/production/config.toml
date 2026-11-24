@@ -1,0 +1,60 @@
+[app]
+log_level = "info"
+env = "prod"
+check_updates = false
+encryption_key = ""
+
+[app.server]
+address = "0.0.0.0:9000"
+socket = ""
+client_ip_header = "X-Client-IP"
+disable_secure_cookies = false
+session_lifetime = "9h"
+read_timeout = "60s"
+write_timeout = "60s"
+max_body_size = 104857600
+read_buffer_size = 65536
+keepalive_timeout = "10s"
+
+[auth]
+local_login_enabled = true
+
+[upload]
+provider = "fs"
+
+[upload.fs]
+upload_path = '/libredesk/uploads'
+expiry = "1h"
+
+[db]
+host = "db"
+port = 5432
+user = "libredesk"
+password = ""
+database = "libredesk"
+ssl_mode = "disable"
+max_open = 30
+max_idle = 30
+max_lifetime = "300s"
+
+[redis]
+address = "redis:6379"
+user = ""
+password = ""
+db = 0
+
+[rate_limit.widget]
+enabled = true
+requests_per_minute = 100
+
+[rate_limit.auth]
+enabled = true
+requests_per_minute = 30
+
+[rate_limit.public]
+enabled = true
+requests_per_minute = 100
+
+[rate_limit.media]
+enabled = true
+requests_per_minute = 300
