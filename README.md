@@ -100,6 +100,7 @@ __________________
 
 ## Developers
 
+- For this fork's production workflow, see [Editing LibreDesk on rep-dev](docs/source-on-rep-dev.md).
 - If you are interested in contributing, **please read [CONTRIBUTING.md](./CONTRIBUTING.md) first**.
 - For local development and setup, refer to the [developer setup](https://docs.libredesk.io/contributing/developer-setup).
 - For planned features and project direction, see [ROADMAP.md](./ROADMAP.md).
