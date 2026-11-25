@@ -40,5 +40,10 @@ assert_contains "$backup" 'config.toml'
 assert_contains "$backup" 'image-manifest.txt'
 assert_contains "$backup" '-mtime +7'
 
+if grep -Fq -- 'trimPrefix' "$backup"; then
+  echo "$backup uses unsupported Docker template function trimPrefix" >&2
+  exit 1
+fi
+
 bash -n "$backup"
 echo "production operations checks passed"

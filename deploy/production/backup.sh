@@ -23,7 +23,8 @@ docker compose exec -T db \
   printf 'created_at=%s\n' "$timestamp"
   docker compose ps -q |
     xargs -r docker inspect \
-      --format '{{trimPrefix "/" .Name}} {{.Config.Image}} {{.Image}}'
+      --format '{{.Name}} {{.Config.Image}} {{.Image}}' |
+    sed 's#^/##'
 } >"$tmp/image-manifest.txt"
 
 tar -C "$root" -czf "$archive" \
