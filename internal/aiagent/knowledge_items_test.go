@@ -1,8 +1,10 @@
 package aiagent
 
 import (
+	"bytes"
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,32 @@ import (
 	"github.com/abhinavxd/libredesk/internal/testutil"
 	"github.com/zerodha/logf"
 )
+
+func TestKnowledgeAudit(t *testing.T) {
+	db := testutil.NewDB(t, "knowledge_audit")
+	var logs bytes.Buffer
+	lo := logf.New(logf.Opts{Writer: &logs})
+	m, err := New(Opts{DB: db, Lo: &lo, I18n: testutil.NewI18n(t)}, nil, nil, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.MustExec(`WITH u AS (INSERT INTO users(type,first_name,last_name) VALUES ('ai_assistant','bot','') RETURNING id)
+		INSERT INTO ai_assistants(id,user_id) SELECT 1,id FROM u;
+		INSERT INTO ai_knowledge_base(id,content) VALUES (2,'hidden'),(3,'hidden'),(7,'hidden'),(8,'hidden');
+		INSERT INTO ai_assistant_knowledge_items VALUES (1,2),(1,3)`)
+	if err := m.ReplaceKnowledgeItemIDs(t.Context(), 1, []int{8, 7, 3}, 42); err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{"timestamp=", "assistant_id=1", "actor_id=42", "added_ids=[7 8]", "removed_ids=[2]"} {
+		if !strings.Contains(strings.ReplaceAll(logs.String(), `"`, ""), part) {
+			t.Errorf("missing audit field %q: %s", part, logs.String())
+		}
+	}
+	logs.Reset()
+	if err := m.ReplaceKnowledgeItemIDs(t.Context(), 1, []int{999}, 42); err == nil || strings.Contains(logs.String(), "added_ids") {
+		t.Fatal("failed replace audited as success")
+	}
+}
 
 func TestKnowledgeItemsReplace(t *testing.T) {
 	db := testutil.NewDB(t, "knowledge_replace")

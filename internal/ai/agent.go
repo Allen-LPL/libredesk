@@ -75,7 +75,6 @@ func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage,
 		toolNames[i] = d.Function.Name
 	}
 	m.lo.Debug("ai run starting", "model", cfg.Model, "vision", cfg.Vision, "max_steps", maxSteps, "history_messages", len(history), "images", imageCount, "tools", len(defs), "tool_names", strings.Join(toolNames, ","))
-	m.lo.Debug("ai run system prompt", "prompt", systemPrompt)
 
 	return &pendingAgentRun{
 		Scope:       scope,
@@ -89,18 +88,17 @@ func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage,
 }
 
 func (m *Manager) executeToolCall(ctx context.Context, registry map[string]Tool, tc models.ToolCall) string {
-	m.lo.Debug("ai run tool call", "tool", tc.Function.Name, "args", tc.Function.Arguments)
 	tool, ok := registry[tc.Function.Name]
 	if !ok {
-		m.lo.Warn("model called unknown tool", "tool", tc.Function.Name)
+		m.lo.Warn("model called unknown tool")
 		return "error: unknown tool " + tc.Function.Name
 	}
 	out, err := tool.Execute(ctx, tc.Function.Arguments)
 	if err != nil {
-		m.lo.Error("error executing tool", "tool", tc.Function.Name, "error", err)
+		m.lo.Error("error executing tool", "tool", tool.Name())
 		return "the tool call failed"
 	}
-	m.lo.Debug("ai run tool result", "tool", tc.Function.Name, "result_len", len(out), "result", out)
+	m.lo.Debug("ai run tool result", "tool", tool.Name(), "result_len", len(out))
 	return out
 }
 

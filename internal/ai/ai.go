@@ -378,7 +378,7 @@ func (m *Manager) UpdateProviderConfig(providerType string, in models.ProviderCo
 
 	// A changed embedding model, dimension count, or backend URL produces vectors incomparable to the stored ones.
 	if providerType == models.ProviderTypeEmbedding && (existing.Model != cfg.Model || existing.Dimensions != cfg.Dimensions || existing.BaseURL != cfg.BaseURL) {
-		m.lo.Info("embedding provider changed, reindexing knowledge base", "old_model", existing.Model, "new_model", cfg.Model, "old_base_url", existing.BaseURL, "new_base_url", cfg.BaseURL)
+		m.lo.Info("embedding provider changed, reindexing knowledge base")
 		m.purgeTagEmbeddings()
 		m.ReindexAll()
 	}
@@ -507,19 +507,19 @@ func (m *Manager) providerError(err error) error {
 		return envelope.NewError(envelope.InputError, m.i18n.T("ai.apiKeyNotSet"), nil)
 	}
 	if errors.Is(err, ErrRateLimited) {
-		m.lo.Error("rate limited by AI provider", "error", err)
+		m.lo.Error("rate limited by AI provider")
 		return envelope.NewError(envelope.RateLimitError, m.i18n.T("ai.rateLimited"), nil)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		m.lo.Error("AI provider request timed out", "error", err)
+		m.lo.Error("AI provider request timed out")
 		return envelope.NewError(envelope.GeneralError, m.i18n.T("ai.providerTimeout"), nil)
 	}
 	if errors.Is(err, ErrProviderUnavailable) {
-		m.lo.Error("AI provider unavailable", "error", err)
+		m.lo.Error("AI provider unavailable")
 		return envelope.NewError(envelope.GeneralError, m.i18n.T("ai.providerUnavailable"), nil)
 	}
-	m.lo.Error("error from AI provider", "error", err)
-	return envelope.NewError(envelope.GeneralError, capProviderErrorMessage(err), nil)
+	m.lo.Error("error from AI provider")
+	return envelope.NewError(envelope.GeneralError, m.i18n.T("ai.providerUnavailable"), nil)
 }
 
 // testProviderError surfaces the provider's own error message so the admin can act on it.

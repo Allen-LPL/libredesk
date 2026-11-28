@@ -1,6 +1,7 @@
 package aiagent
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,6 +23,26 @@ import (
 )
 
 func TestAssistantKnowledgeToolScope(t *testing.T) {
+	testKnowledgeTool(t, nil)
+}
+
+func TestKnowledgeLogsSearch(t *testing.T) {
+	var logs bytes.Buffer
+	testKnowledgeTool(t, &logs)
+	for _, s := range []string{"surface=preview", "outcome=hit", "outcome=empty", "outcome=error", "hits=1"} {
+		if !strings.Contains(logs.String(), s) {
+			t.Errorf("missing search telemetry: %s", s)
+		}
+	}
+	for _, s := range []string{"neutral", "Design control", "Allen only"} {
+		if strings.Contains(logs.String(), s) {
+			t.Error("logged private knowledge")
+		}
+	}
+}
+
+func testKnowledgeTool(t *testing.T, logs *bytes.Buffer) {
+	t.Helper()
 	db := testutil.NewDB(t, "assistant_tool_scope")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"data":[{"index":0,"embedding":[1,0]}]}`)
@@ -35,13 +56,16 @@ func TestAssistantKnowledgeToolScope(t *testing.T) {
 		INSERT INTO embeddings(source_type,source_id,chunk_text,embedding,dimensions)
 			SELECT 'snippet',id,content,decode(CASE WHEN id=7 THEN '000000000000803f' ELSE '0000803f00000000' END,'hex'),2 FROM ai_knowledge_base`)
 	lo := logf.New(logf.Opts{})
+	if logs != nil {
+		lo = logf.New(logf.Opts{Writer: logs, Level: logf.DebugLevel})
+	}
 	engine, err := ai.New(ai.Opts{DB: db, Lo: &lo, I18n: testutil.NewI18n(t), Ctx: t.Context()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer engine.Close()
 	var hits []aimodels.SearchResult
-	tool := &searchKnowledgeTool{m: &Manager{ai: engine, lo: &lo}, assistantID: 2, collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}
+	tool := &searchKnowledgeTool{m: &Manager{ai: engine, lo: &lo}, assistantID: 2, surface: "preview", collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}
 	if strings.Contains(string(tool.Parameters()), "assistant_id") {
 		t.Fatal("model can select assistant scope")
 	}
@@ -54,6 +78,10 @@ func TestAssistantKnowledgeToolScope(t *testing.T) {
 	out, err = tool.Execute(t.Context(), `{"query":"neutral","assistant_id":1}`)
 	if err == nil || out != "" || len(hits) != 1 {
 		t.Fatal("missing server scope did not deny search")
+	}
+	tool.assistantID = 999
+	if out, err := tool.Execute(t.Context(), `{"query":"neutral"}`); err != nil || !strings.Contains(out, "No relevant") {
+		t.Fatal("expected empty search")
 	}
 }
 

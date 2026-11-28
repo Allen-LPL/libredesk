@@ -75,5 +75,20 @@ func (m *Manager) ReplaceKnowledgeItemIDs(ctx context.Context, assistantID int, 
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	var added, removed []int
+	for _, id := range ordered {
+		if _, found := slices.BinarySearch(previous, int64(id)); !found {
+			added = append(added, id)
+		}
+	}
+	for _, id := range previous {
+		if _, found := slices.BinarySearch(ordered, int(id)); !found {
+			removed = append(removed, int(id))
+		}
+	}
+	m.lo.Info("assistant knowledge grants replaced", "actor_id", actorID, "assistant_id", assistantID, "added_ids", added, "removed_ids", removed)
+	return nil
 }

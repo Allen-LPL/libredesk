@@ -226,14 +226,14 @@ func (t *httpTool) Execute(ctx context.Context, args string) (string, error) {
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
-		t.lo.Error("error calling custom tool", "tool", t.tool.Name, "error", err)
+		t.lo.Error("error calling custom tool", "tool_id", t.tool.ID)
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	out, err := io.ReadAll(io.LimitReader(resp.Body, maxToolResponseBytes))
 	if err != nil {
-		t.lo.Error("error reading custom tool response", "tool_id", t.tool.ID, "conversation_uuid", t.tctx.ConversationUUID, "status", resp.StatusCode, "error", err)
+		t.lo.Error("error reading custom tool response", "tool_id", t.tool.ID, "conversation_uuid", t.tctx.ConversationUUID, "status", resp.StatusCode)
 	}
 	body := string(out)
 	if len(body) > maxToolResultChars {

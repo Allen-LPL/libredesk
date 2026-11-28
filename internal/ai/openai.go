@@ -174,7 +174,7 @@ func (o *OpenAIClient) SendChatCompletion(ctx context.Context, payload models.Ch
 	var usage models.TokenUsage
 	if len(parsed.Usage) > 0 {
 		if err := json.Unmarshal(parsed.Usage, &usage); err != nil {
-			o.lo.Warn("could not parse token usage from provider response", "error", err)
+			o.lo.Warn("could not parse token usage from provider response")
 		}
 	}
 	o.lo.Debug("chat completion response", "model", model, "prompt_tokens", usage.PromptTokens, "completion_tokens", usage.CompletionTokens, "total_tokens", usage.TotalTokens)
@@ -340,7 +340,7 @@ func (o *OpenAIClient) post(ctx context.Context, path string, body map[string]an
 		if delay <= 0 {
 			delay = backoffDelay(attempt)
 		}
-		o.lo.Warn("retrying AI provider request after transient error", "attempt", attempt+1, "max_retries", maxRequestRetries, "delay", delay.String(), "error", err)
+		o.lo.Warn("retrying AI provider request after transient error", "attempt", attempt+1, "max_retries", maxRequestRetries, "delay", delay.String())
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -372,7 +372,7 @@ func (o *OpenAIClient) doRequest(ctx context.Context, path string, bodyBytes []b
 	case resp.StatusCode == http.StatusOK:
 		return respBytes, 0, false, nil
 	case resp.StatusCode == http.StatusUnauthorized:
-		o.lo.Error("unauthorized from AI provider (401)", "base_url", o.cfg.BaseURL, "response", string(respBytes))
+		o.lo.Error("unauthorized from AI provider", "status", resp.StatusCode)
 		return nil, 0, false, ErrInvalidAPIKey
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return nil, parseRetryAfter(resp.Header.Get("Retry-After")), true, fmt.Errorf("%w: status %d: %s", ErrRateLimited, resp.StatusCode, string(respBytes))
