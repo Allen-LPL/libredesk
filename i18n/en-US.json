@@ -1759,6 +1759,7 @@
   "validation.invalidIPOrCIDR": "Invalid IP address or CIDR range: {entry}",
   "validation.invalidInbox": "Invalid inbox",
   "validation.invalidKey": "Invalid key",
+  "validation.invalidKnowledgeItemIDs": "Provide a list of distinct, existing snippet IDs. Use an empty list to clear this assistant’s selection.",
   "validation.invalidPermission": "Invalid permission",
   "validation.invalidPhone": "Invalid phone number",
   "validation.invalidPortValue": "Invalid port value",

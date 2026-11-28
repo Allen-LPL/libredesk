@@ -31,6 +31,11 @@ import (
 var efs embed.FS
 
 type queries struct {
+	GetKnowledgeItemIDs     *sqlx.Stmt `query:"get-knowledge-item-ids"`
+	LockKnowledgeAssistant  *sqlx.Stmt `query:"lock-knowledge-assistant"`
+	CountSnippetIDs         *sqlx.Stmt `query:"count-snippet-ids"`
+	DeleteKnowledgeItemIDs  *sqlx.Stmt `query:"delete-knowledge-item-ids"`
+	InsertKnowledgeItemIDs  *sqlx.Stmt `query:"insert-knowledge-item-ids"`
 	GetAssistants           *sqlx.Stmt `query:"get-assistants"`
 	GetAssistant            *sqlx.Stmt `query:"get-assistant"`
 	GetAssistantByUserID    *sqlx.Stmt `query:"get-assistant-by-user-id"`
