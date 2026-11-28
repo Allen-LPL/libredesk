@@ -293,7 +293,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	outcome := &runOutcome{}
 	var hits []aimodels.SearchResult
 	tools := []ai.Tool{
-		&searchKnowledgeTool{m: m, citationsEnabled: assistant.CitationsEnabled, collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }},
+		&searchKnowledgeTool{m: m, assistantID: assistant.ID, surface: "autonomous", collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }},
 		&resolveTool{m: m, conv: conv, outcome: outcome},
 	}
 	if assistant.HandoffEnabled {
@@ -568,7 +568,7 @@ func (m *Manager) PreviewReply(ctx context.Context, assistantID int, message str
 	}
 	history := []aimodels.ChatMessage{{Role: aimodels.RoleUser, Content: message}}
 	var hits []aimodels.SearchResult
-	tools := []ai.Tool{&searchKnowledgeTool{m: m, citationsEnabled: a.CitationsEnabled, collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}}
+	tools := []ai.Tool{&searchKnowledgeTool{m: m, assistantID: a.ID, surface: "preview", collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}}
 	runCtx, cancel := context.WithTimeout(ctx, livechatRunTimeout)
 	defer cancel()
 	// Preview is search-only: no custom tools (empty allowed set), no built-in, no side effects.

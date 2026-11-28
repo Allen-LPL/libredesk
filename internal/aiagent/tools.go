@@ -84,9 +84,10 @@ func (o *runOutcome) toolCalled(name, displayName string) {
 }
 
 type searchKnowledgeTool struct {
-	m                *Manager
-	collect          func([]aimodels.SearchResult)
-	citationsEnabled bool
+	m           *Manager
+	collect     func([]aimodels.SearchResult)
+	assistantID int
+	surface     string
 }
 
 func (t *searchKnowledgeTool) Name() string { return "search_knowledge_base" }
@@ -107,7 +108,7 @@ func (t *searchKnowledgeTool) Execute(ctx context.Context, args string) (string,
 	if strings.TrimSpace(in.Query) == "" {
 		return "No query provided.", nil
 	}
-	results, err := t.m.ai.Search(ctx, in.Query, searchResultLimit)
+	results, err := t.m.ai.SearchAssistantKnowledge(ctx, t.assistantID, in.Query, searchResultLimit)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +116,7 @@ func (t *searchKnowledgeTool) Execute(ctx context.Context, args string) (string,
 	if len(results) > 0 {
 		topScore = results[0].Score
 	}
-	t.m.lo.Debug("ai agent knowledge search", "query_len", len(in.Query), "hits", len(results), "top_score", topScore, "min_confidence", minConfidence)
+	t.m.lo.Debug("ai agent knowledge search", "surface", t.surface, "assistant_id", t.assistantID, "query_len", len(in.Query), "hits", len(results), "top_score", topScore, "min_confidence", minConfidence)
 	if len(results) == 0 || results[0].Score < minConfidence {
 		return "No relevant information found in the knowledge base.", nil
 	}
@@ -130,9 +131,6 @@ func (t *searchKnowledgeTool) Execute(ctx context.Context, args string) (string,
 			used = append(used, r)
 		}
 		fmt.Fprintf(&b, "<<result %d>>\n", i+1)
-		if t.citationsEnabled && r.SourceType == aimodels.SourceHelpArticle {
-			fmt.Fprintf(&b, "article_id: %d\n", r.SourceID)
-		}
 		fmt.Fprintf(&b, "%s\n<<end result %d>>\n\n", neutralizeMarkers(r.ChunkText), i+1)
 	}
 	if t.collect != nil {
