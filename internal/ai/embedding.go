@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"math"
 	"slices"
 	"sort"
@@ -96,14 +97,18 @@ func (ix *embeddingIndex) search(query []float32, k int, sourceTypes ...string) 
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 
+	return rankChunks(ix.chunks, query, k, sourceTypes...)
+}
+
+func rankChunks(chunks []indexedChunk, query []float32, k int, sourceTypes ...string) ([]models.SearchResult, int) {
 	qNorm := norm(query)
 	if qNorm == 0 {
 		return nil, 0
 	}
 
 	dimMismatch := 0
-	results := make([]models.SearchResult, 0, len(ix.chunks))
-	for _, c := range ix.chunks {
+	results := make([]models.SearchResult, 0, len(chunks))
+	for _, c := range chunks {
 		if !slices.Contains(sourceTypes, c.sourceType) {
 			continue
 		}
@@ -115,6 +120,9 @@ func (ix *embeddingIndex) search(query []float32, k int, sourceTypes ...string) 
 			continue
 		}
 		score := dot(query, c.vec) / (qNorm * c.norm)
+		if math.IsNaN(float64(score)) || math.IsInf(float64(score), 0) {
+			continue
+		}
 		results = append(results, models.SearchResult{
 			SourceType: c.sourceType,
 			SourceID:   c.sourceID,
@@ -128,6 +136,36 @@ func (ix *embeddingIndex) search(query []float32, k int, sourceTypes ...string) 
 		results = results[:k]
 	}
 	return results, dimMismatch
+}
+
+// SearchAssistantKnowledge reads current grants and their enabled snippet chunks in
+// one SQL snapshot. Never rank or return chunks from the workspace-wide index here.
+func (m *Manager) SearchAssistantKnowledge(ctx context.Context, assistantID int, query string, k int) ([]models.SearchResult, error) {
+	const maxResults = 50
+	if assistantID <= 0 || k < 1 || k > maxResults {
+		return nil, errors.New("invalid assistant knowledge search scope or limit")
+	}
+	var rows []models.Embedding
+	if err := m.q.AssistantKnowledgeChunks.SelectContext(ctx, &rows, assistantID); err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	vec, err := m.GetEmbeddings(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	chunks := make([]indexedChunk, 0, len(rows))
+	for _, row := range rows {
+		if row.Dimensions != len(vec) || len(row.Embedding) != 4*len(vec) {
+			continue
+		}
+		v := deserializeEmbedding(row.Embedding)
+		chunks = append(chunks, indexedChunk{sourceType: row.SourceType, sourceID: int(row.SourceID), chunkText: row.ChunkText, vec: v, norm: norm(v)})
+	}
+	results, _ := rankChunks(chunks, vec, k, models.SourceSnippet)
+	return results, nil
 }
 
 // Search embeds the query and returns the top-k most similar knowledge chunks across snippets and help articles.

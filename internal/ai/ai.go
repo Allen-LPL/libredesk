@@ -102,6 +102,7 @@ type ProviderConfigView struct {
 }
 
 type queries struct {
+	AssistantKnowledgeChunks     *sqlx.Stmt `query:"assistant-knowledge-chunks"`
 	GetProviderByType            *sqlx.Stmt `query:"get-provider-by-type"`
 	UpdateProviderConfig         *sqlx.Stmt `query:"update-provider-config"`
 	GetPrompt                    *sqlx.Stmt `query:"get-prompt"`
