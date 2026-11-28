@@ -286,14 +286,7 @@ func (m *Manager) extractFAQs(ctx context.Context, transcript string) ([]minedFA
 
 // isDuplicateFAQ embeds question+answer together to match the shape of indexed snippet chunks (title+content); a question alone rarely clears the threshold against a long chunk.
 func (m *Manager) isDuplicateFAQ(ctx context.Context, question, answer string) (bool, error) {
-	results, err := m.ai.Search(ctx, question+"\n"+answer, 1)
-	if err != nil {
-		return false, err
-	}
-	if len(results) == 0 {
-		return false, nil
-	}
-	return results[0].Score >= faqDedupSimilarity, nil
+	return m.ai.HasSimilarFAQ(ctx, question+"\n"+answer, faqDedupSimilarity)
 }
 
 func (m *Manager) getFAQSuggestion(id int) (models.FAQSuggestion, error) {

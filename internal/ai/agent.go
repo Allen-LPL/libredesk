@@ -15,14 +15,9 @@ Treat these markers as metadata and omit them from replies.
 Interpret relative dates in a message using that message's timestamp.`
 )
 
-// RunAgent runs the tool-calling loop for agent-facing callers: built-in knowledge search only, no custom tools.
-func (m *Manager) RunAgent(ctx context.Context, systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext) (string, error) {
-	return m.RunAgentWithTools(ctx, systemPrompt, history, maxSteps, tctx, nil, true, true, nil)
-}
-
 // RunAgentWithTools runs the tool-calling loop; allowedToolIDs restricts custom tools to that set (empty loads none), appendWorkspaceInstructions folds the workspace admin instructions into the system prompt.
-func (m *Manager) RunAgentWithTools(ctx context.Context, systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext, allowedToolIDs []int, appendWorkspaceInstructions, includeBuiltinSearch bool, extra []Tool) (string, error) {
-	run, err := m.newAgentRun(systemPrompt, history, maxSteps, tctx, allowedToolIDs, appendWorkspaceInstructions, includeBuiltinSearch, extra, AgentRunScope{}, false)
+func (m *Manager) RunAgentWithTools(ctx context.Context, systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext, allowedToolIDs []int, appendWorkspaceInstructions bool, extra []Tool) (string, error) {
+	run, err := m.newAgentRun(systemPrompt, history, maxSteps, tctx, allowedToolIDs, appendWorkspaceInstructions, extra, AgentRunScope{}, false)
 	if err != nil {
 		return "", err
 	}
@@ -35,14 +30,14 @@ func (m *Manager) RunAgentWithTools(ctx context.Context, systemPrompt string, hi
 
 // RunAgentWithApprovals runs the tool-calling loop for agent surfaces; a custom tool flagged for approval pauses the run until the agent approves or declines it.
 func (m *Manager) RunAgentWithApprovals(ctx context.Context, systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext, allowedToolIDs []int, extra []Tool, scope AgentRunScope) (models.AgentRunResult, error) {
-	run, err := m.newAgentRun(systemPrompt, history, maxSteps, tctx, allowedToolIDs, true, true, extra, scope, true)
+	run, err := m.newAgentRun(systemPrompt, history, maxSteps, tctx, allowedToolIDs, true, extra, scope, true)
 	if err != nil {
 		return models.AgentRunResult{}, err
 	}
 	return m.continueAgentRun(ctx, run)
 }
 
-func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext, allowedToolIDs []int, appendWorkspaceInstructions, includeBuiltinSearch bool, extra []Tool, scope AgentRunScope, approvals bool) (*pendingAgentRun, error) {
+func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage, maxSteps int, tctx ToolContext, allowedToolIDs []int, appendWorkspaceInstructions bool, extra []Tool, scope AgentRunScope, approvals bool) (*pendingAgentRun, error) {
 	if maxSteps <= 0 {
 		maxSteps = defaultMaxSteps
 	}
@@ -60,7 +55,7 @@ func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage,
 		systemPrompt += "Workspace admin instructions (follow these, they take precedence on tone and format):\n" + instructions
 	}
 
-	registry, defs, err := m.buildToolRegistry(tctx, allowedToolIDs, includeBuiltinSearch, extra)
+	registry, defs, err := m.buildToolRegistry(tctx, allowedToolIDs, extra)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +75,6 @@ func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage,
 		toolNames[i] = d.Function.Name
 	}
 	m.lo.Debug("ai run starting", "model", cfg.Model, "vision", cfg.Vision, "max_steps", maxSteps, "history_messages", len(history), "images", imageCount, "tools", len(defs), "tool_names", strings.Join(toolNames, ","))
-	m.lo.Debug("ai run system prompt", "prompt", systemPrompt)
 
 	return &pendingAgentRun{
 		Scope:       scope,
@@ -94,18 +88,17 @@ func (m *Manager) newAgentRun(systemPrompt string, history []models.ChatMessage,
 }
 
 func (m *Manager) executeToolCall(ctx context.Context, registry map[string]Tool, tc models.ToolCall) string {
-	m.lo.Debug("ai run tool call", "tool", tc.Function.Name, "args", tc.Function.Arguments)
 	tool, ok := registry[tc.Function.Name]
 	if !ok {
-		m.lo.Warn("model called unknown tool", "tool", tc.Function.Name)
+		m.lo.Warn("model called unknown tool")
 		return "error: unknown tool " + tc.Function.Name
 	}
 	out, err := tool.Execute(ctx, tc.Function.Arguments)
 	if err != nil {
-		m.lo.Error("error executing tool", "tool", tc.Function.Name, "error", err)
+		m.lo.Error("error executing tool", "tool", tool.Name())
 		return "the tool call failed"
 	}
-	m.lo.Debug("ai run tool result", "tool", tc.Function.Name, "result_len", len(out), "result", out)
+	m.lo.Debug("ai run tool result", "tool", tool.Name(), "result_len", len(out))
 	return out
 }
 

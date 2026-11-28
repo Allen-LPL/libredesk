@@ -293,7 +293,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	outcome := &runOutcome{}
 	var hits []aimodels.SearchResult
 	tools := []ai.Tool{
-		&searchKnowledgeTool{m: m, citationsEnabled: assistant.CitationsEnabled, collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }},
+		&searchKnowledgeTool{m: m, assistantID: assistant.ID, surface: "autonomous", collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }},
 		&resolveTool{m: m, conv: conv, outcome: outcome},
 	}
 	if assistant.HandoffEnabled {
@@ -339,7 +339,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stopTyping := m.keepTyping(conv.UUID)
-	answer, err := m.ai.RunAgentWithTools(runCtx, systemPrompt, history, m.maxSteps, tctx, assistant.ToolIDs, false, false, tools)
+	answer, err := m.ai.RunAgentWithTools(runCtx, systemPrompt, history, m.maxSteps, tctx, assistant.ToolIDs, false, tools)
 	stopTyping()
 	// A human agent may have taken over or resolved the conversation mid-run; if so, drop this
 	// run's reply and status actions instead of talking over them.
@@ -568,11 +568,11 @@ func (m *Manager) PreviewReply(ctx context.Context, assistantID int, message str
 	}
 	history := []aimodels.ChatMessage{{Role: aimodels.RoleUser, Content: message}}
 	var hits []aimodels.SearchResult
-	tools := []ai.Tool{&searchKnowledgeTool{m: m, citationsEnabled: a.CitationsEnabled, collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}}
+	tools := []ai.Tool{&searchKnowledgeTool{m: m, assistantID: a.ID, surface: "preview", collect: func(rs []aimodels.SearchResult) { hits = append(hits, rs...) }}}
 	runCtx, cancel := context.WithTimeout(ctx, livechatRunTimeout)
 	defer cancel()
 	// Preview is search-only: no custom tools (empty allowed set), no built-in, no side effects.
-	answer, err := m.ai.RunAgentWithTools(runCtx, buildSystemPrompt(a), history, m.maxSteps, ai.ToolContext{}, []int{}, false, false, tools)
+	answer, err := m.ai.RunAgentWithTools(runCtx, buildSystemPrompt(a), history, m.maxSteps, ai.ToolContext{}, []int{}, false, tools)
 	if err != nil {
 		return "", nil, err
 	}
@@ -829,11 +829,7 @@ func (m *Manager) messageText(msg cmodels.Message) string {
 		return full
 	}
 	if trimmed != full {
-		removed := full
-		if rest, ok := strings.CutPrefix(full, trimmed); ok {
-			removed = strings.TrimSpace(rest)
-		}
-		m.lo.Debug("ai agent stripped quoted text", "message_uuid", msg.UUID, "kept_len", len(trimmed), "full_len", len(full), "removed", removed)
+		m.lo.Debug("ai agent stripped quoted text", "message_uuid", msg.UUID, "kept_len", len(trimmed), "full_len", len(full))
 	}
 	return trimmed
 }

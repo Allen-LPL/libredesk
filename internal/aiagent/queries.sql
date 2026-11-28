@@ -61,6 +61,26 @@ WHERE assigned_user_id = $1
 -- name: get-assistant-tools
 SELECT tool_id FROM ai_assistant_tools WHERE assistant_id = $1 ORDER BY tool_id;
 
+-- name: get-knowledge-item-ids
+SELECT ARRAY(SELECT g.knowledge_item_id FROM ai_assistant_knowledge_items g
+             WHERE g.assistant_id = a.id ORDER BY g.knowledge_item_id)
+FROM ai_assistants a JOIN users u ON u.id = a.user_id AND u.deleted_at IS NULL
+WHERE a.id = $1;
+
+-- name: lock-knowledge-assistant
+SELECT a.id FROM ai_assistants a JOIN users u ON u.id = a.user_id AND u.deleted_at IS NULL
+WHERE a.id = $1 FOR UPDATE OF a;
+
+-- name: count-snippet-ids
+SELECT COUNT(*) FROM ai_knowledge_base WHERE type = 'snippet' AND id = ANY($1::int[]);
+
+-- name: delete-knowledge-item-ids
+DELETE FROM ai_assistant_knowledge_items WHERE assistant_id = $1;
+
+-- name: insert-knowledge-item-ids
+INSERT INTO ai_assistant_knowledge_items (assistant_id, knowledge_item_id)
+SELECT $1, unnest($2::int[]);
+
 -- name: get-all-assistant-tools
 SELECT assistant_id, tool_id FROM ai_assistant_tools ORDER BY assistant_id, tool_id;
 

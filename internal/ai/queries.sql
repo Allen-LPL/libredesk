@@ -102,6 +102,15 @@ SELECT id, name FROM tags ORDER BY id;
 -- name: get-all-embeddings
 SELECT id, source_type, source_id, chunk_text, embedding, dimensions FROM embeddings;
 
+-- name: assistant-knowledge-chunks
+SELECT e.source_type, e.source_id, e.chunk_text, e.embedding, e.dimensions
+FROM ai_assistants a
+JOIN users u ON u.id = a.user_id AND u.deleted_at IS NULL AND u.enabled
+JOIN ai_assistant_knowledge_items g ON g.assistant_id = a.id
+JOIN ai_knowledge_base i ON i.id = g.knowledge_item_id AND i.enabled AND i.type = 'snippet'
+JOIN embeddings e ON e.source_id = i.id AND e.source_type = 'snippet'
+WHERE a.id = $1 AND a.enabled;
+
 -- name: get-tools
 SELECT id, created_at, updated_at, name, display_name, description, url, method, auth, parameters, enabled, requires_verification, copilot_enabled, generate_reply_enabled, requires_agent_approval FROM ai_tools ORDER BY updated_at DESC;
 
