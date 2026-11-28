@@ -339,7 +339,7 @@ func (m *Manager) handle(ctx context.Context, convID int) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stopTyping := m.keepTyping(conv.UUID)
-	answer, err := m.ai.RunAgentWithTools(runCtx, systemPrompt, history, m.maxSteps, tctx, assistant.ToolIDs, false, false, tools)
+	answer, err := m.ai.RunAgentWithTools(runCtx, systemPrompt, history, m.maxSteps, tctx, assistant.ToolIDs, false, tools)
 	stopTyping()
 	// A human agent may have taken over or resolved the conversation mid-run; if so, drop this
 	// run's reply and status actions instead of talking over them.
@@ -572,7 +572,7 @@ func (m *Manager) PreviewReply(ctx context.Context, assistantID int, message str
 	runCtx, cancel := context.WithTimeout(ctx, livechatRunTimeout)
 	defer cancel()
 	// Preview is search-only: no custom tools (empty allowed set), no built-in, no side effects.
-	answer, err := m.ai.RunAgentWithTools(runCtx, buildSystemPrompt(a), history, m.maxSteps, ai.ToolContext{}, []int{}, false, false, tools)
+	answer, err := m.ai.RunAgentWithTools(runCtx, buildSystemPrompt(a), history, m.maxSteps, ai.ToolContext{}, []int{}, false, tools)
 	if err != nil {
 		return "", nil, err
 	}

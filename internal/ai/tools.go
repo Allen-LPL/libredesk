@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	toolSearchArticles = "search_articles"
-
 	maxToolResponseBytes = 1 << 20
 
 	// maxToolResultChars caps tool output fed to the model so a large response can't blow the context window.
@@ -40,7 +38,7 @@ var (
 	// internal/aiagent/tools.go) custom tools may not use: a colliding custom tool would be
 	// silently replaced by the built-in in the agent loop's registry.
 	reservedToolNames = map[string]bool{
-		toolSearchArticles:           true,
+		"search_articles":            true, // Retired staff tool; never allow custom tools to claim it.
 		"search_knowledge_base":      true,
 		"hand_off_to_human":          true,
 		"resolve":                    true,
@@ -52,17 +50,6 @@ var (
 
 	// allowedToolMethods are the HTTP methods a custom tool may use: GET reads, POST writes.
 	allowedToolMethods = map[string]bool{http.MethodGet: true, http.MethodPost: true}
-
-	searchArticlesParams = types.JSONText(`{
-		"type": "object",
-		"properties": {
-			"query": {
-				"type": "string",
-				"description": "The natural-language search query to find relevant knowledge base content."
-			}
-		},
-		"required": ["query"]
-	}`)
 
 	// defaultToolParams is used when an admin defines a custom tool without a JSON schema.
 	defaultToolParams = types.JSONText(`{
@@ -82,45 +69,6 @@ type Tool interface {
 	Description() string
 	Parameters() types.JSONText
 	Execute(ctx context.Context, args string) (string, error)
-}
-
-// searchArticlesTool is the built-in retrieval tool over embedded articles + snippets.
-type searchArticlesTool struct {
-	m *Manager
-}
-
-func (t *searchArticlesTool) Name() string { return toolSearchArticles }
-
-func (t *searchArticlesTool) Description() string {
-	return "Search the knowledge base snippets and help center articles for information relevant to the customer's question. Returns the most relevant content chunks."
-}
-
-func (t *searchArticlesTool) Parameters() types.JSONText { return searchArticlesParams }
-
-func (t *searchArticlesTool) Execute(ctx context.Context, args string) (string, error) {
-	var in struct {
-		Query string `json:"query"`
-	}
-	if err := json.Unmarshal([]byte(args), &in); err != nil {
-		return "", fmt.Errorf("invalid arguments: %w", err)
-	}
-	if strings.TrimSpace(in.Query) == "" {
-		return "No query provided.", nil
-	}
-
-	results, err := t.m.Search(ctx, in.Query, 5)
-	if err != nil {
-		return "", err
-	}
-	if len(results) == 0 {
-		return "No relevant articles found in the knowledge base.", nil
-	}
-
-	var b strings.Builder
-	for i, r := range results {
-		fmt.Fprintf(&b, "[%d] (relevance %.2f)\n%s\n\n", i+1, r.Score, r.ChunkText)
-	}
-	return b.String(), nil
 }
 
 // ToolContext is per-run context injected into custom tool calls server-side. It is never part
@@ -299,7 +247,7 @@ func (t *httpTool) Execute(ctx context.Context, args string) (string, error) {
 }
 
 // buildToolRegistry assembles the tools advertised to the model; earlier registrations win, so custom tools (restricted to allowedToolIDs, empty loads none) can't shadow built-ins.
-func (m *Manager) buildToolRegistry(tctx ToolContext, allowedToolIDs []int, includeBuiltinSearch bool, extra []Tool) (map[string]Tool, []models.ToolDef, error) {
+func (m *Manager) buildToolRegistry(tctx ToolContext, allowedToolIDs []int, extra []Tool) (map[string]Tool, []models.ToolDef, error) {
 	registry := map[string]Tool{}
 	var defs []models.ToolDef
 
@@ -312,9 +260,6 @@ func (m *Manager) buildToolRegistry(tctx ToolContext, allowedToolIDs []int, incl
 		defs = append(defs, toolDef(t))
 	}
 
-	if includeBuiltinSearch {
-		register(&searchArticlesTool{m: m})
-	}
 	for _, t := range extra {
 		register(t)
 	}
@@ -328,6 +273,9 @@ func (m *Manager) buildToolRegistry(tctx ToolContext, allowedToolIDs []int, incl
 		return nil, nil, err
 	}
 	for _, ct := range customTools {
+		if reservedToolNames[ct.Name] {
+			continue
+		}
 		register(newHTTPTool(ct, m.encryptionKey, m.lo, m.toolHTTPClient, tctx))
 	}
 	return registry, defs, nil

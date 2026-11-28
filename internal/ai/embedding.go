@@ -168,9 +168,13 @@ func (m *Manager) SearchAssistantKnowledge(ctx context.Context, assistantID int,
 	return results, nil
 }
 
-// Search embeds the query and returns the top-k most similar knowledge chunks across snippets and help articles.
-func (m *Manager) Search(ctx context.Context, query string, k int) ([]models.SearchResult, error) {
-	return m.searchSources(ctx, query, k, models.SourceSnippet, models.SourceHelpArticle)
+// HasSimilarFAQ checks for duplicate suggestions without exposing workspace knowledge text.
+func (m *Manager) HasSimilarFAQ(ctx context.Context, query string, threshold float64) (bool, error) {
+	results, err := m.searchSources(ctx, query, 1, models.SourceSnippet, models.SourceHelpArticle)
+	if err != nil {
+		return false, err
+	}
+	return len(results) > 0 && results[0].Score >= threshold, nil
 }
 
 func (m *Manager) searchSources(ctx context.Context, query string, k int, sourceTypes ...string) ([]models.SearchResult, error) {
