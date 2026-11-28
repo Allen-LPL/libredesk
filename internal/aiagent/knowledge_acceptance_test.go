@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/abhinavxd/libredesk/internal/inbox"
 	"github.com/abhinavxd/libredesk/internal/inbox/channel/livechat"
 	"github.com/abhinavxd/libredesk/internal/media"
+	"github.com/abhinavxd/libredesk/internal/migrations"
 	"github.com/abhinavxd/libredesk/internal/setting"
 	"github.com/abhinavxd/libredesk/internal/testutil"
 	"github.com/abhinavxd/libredesk/internal/user"
@@ -22,6 +24,113 @@ import (
 	"github.com/google/uuid"
 	"github.com/zerodha/logf"
 )
+
+func TestKnowledgeUpgradeIsolation(t *testing.T) {
+	for _, mode := range []string{"fresh", "upgrade"} {
+		t.Run(mode, func(t *testing.T) {
+			db := testutil.NewDB(t, "knowledge_install_"+mode)
+			ctx := t.Context()
+			lo := logf.New(logf.Opts{})
+			lang := testutil.NewI18n(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/article" {
+					w.Header().Set("Content-Type", "text/html")
+					fmt.Fprintf(w, `<html><head><title>Fixture</title></head><body><article><p>%s</p></article></body></html>`, strings.Repeat("Synthetic imported snippet content. ", 10))
+					return
+				}
+				if r.URL.Path != "/embeddings" {
+					t.Errorf("unexpected provider path: %s", r.URL.Path)
+					w.WriteHeader(404)
+					return
+				}
+				fmt.Fprint(w, `{"data":[{"embedding":[1,0],"index":0}]}`)
+			}))
+			defer srv.Close()
+			db.MustExec(`UPDATE ai_providers SET config=jsonb_build_object('base_url',$1::text,'api_key','fixture') WHERE type='embedding'`, srv.URL)
+			if mode == "upgrade" {
+				db.MustExec(`DROP TABLE ai_assistant_knowledge_items`)
+			}
+			db.MustExec(`INSERT INTO users(id,type,first_name,last_name) VALUES (10,'ai_assistant','One',''),(11,'ai_assistant','Two','');
+				INSERT INTO ai_assistants(id,user_id) VALUES(1,10),(2,11);
+				INSERT INTO ai_knowledge_base(title,content,source) VALUES ('A','legacy manual','manual'),('B','legacy URL','url'),('C','legacy FAQ','conversation');
+				INSERT INTO embeddings(source_type,source_id,chunk_text,embedding,dimensions) SELECT 'snippet',id,content,decode('0000803f00000000','hex'),2 FROM ai_knowledge_base`)
+			snapshot := func() []string {
+				t.Helper()
+				var rows []string
+				if err := db.Select(&rows, `SELECT concat_ws('|',i.id,i.source,i.title,i.content,e.id,e.chunk_text,encode(e.embedding,'hex')) FROM ai_knowledge_base i JOIN embeddings e ON e.source_type='snippet' AND e.source_id=i.id ORDER BY i.id,e.id`); err != nil {
+					t.Fatal(err)
+				}
+				return rows
+			}
+			before := snapshot()
+			if len(before) != 3 {
+				t.Fatal("missing legacy fixture")
+			}
+			opts := ai.Opts{DB: db, Ctx: ctx, Lo: &lo, I18n: lang}
+			if mode == "upgrade" {
+				if _, err := ai.New(opts); err == nil {
+					t.Fatal("AI manager started without migration")
+				}
+				if err := migrations.V2_10_0_RC4(db, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !slices.Equal(before, snapshot()) {
+				t.Fatal("migration changed existing snippets or vectors")
+			}
+			engine, err := ai.New(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer engine.Close()
+			store, err := New(Opts{DB: db, Lo: &lo, I18n: lang}, engine, nil, nil, nil, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertUnbound := func() {
+				t.Helper()
+				var count int
+				if err := db.Get(&count, `SELECT count(*) FROM ai_assistant_knowledge_items`); err != nil || count != 0 {
+					t.Fatalf("implicit grants: %d (%v)", count, err)
+				}
+				for _, id := range []int{1, 2} {
+					hits, err := engine.SearchAssistantKnowledge(ctx, id, "neutral", 5)
+					if err != nil || len(hits) != 0 {
+						t.Fatalf("unbound assistant %d retrieved %v (%v)", id, hits, err)
+					}
+				}
+			}
+			assertUnbound()
+			if _, err := engine.CreateKnowledgeBaseItem("Manual", "Synthetic manual snippet", aimodels.KnowledgeSourceManual, "", true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := engine.ImportKnowledgeBaseFromURL(ctx, srv.URL+"/article"); err != nil {
+				t.Fatal(err)
+			}
+			db.MustExec(`INSERT INTO inboxes(id,name,channel) VALUES(1,'Fixture','livechat');
+				INSERT INTO conversations(id,inbox_id,contact_id,status_id) SELECT 1,1,10,id FROM conversation_statuses WHERE category='open' LIMIT 1;
+				INSERT INTO ai_faq_suggestions(id,conversation_id,question,answer) VALUES(1,1,'FAQ?','Synthetic FAQ snippet')`)
+			if err := store.ApproveFAQSuggestion(1, "", "", 11); err != nil {
+				t.Fatal(err)
+			}
+			engine.Close() // wait until the async create/import/approval jobs have finished
+			assertUnbound()
+			if err := store.ReplaceKnowledgeItemIDs(ctx, 1, []int{1}, 11); err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []int{1, 2} {
+				hits, err := engine.SearchAssistantKnowledge(ctx, id, "neutral", 5)
+				if err != nil || id == 2 && len(hits) != 0 || id == 1 && (len(hits) != 1 || hits[0].ChunkText != "legacy manual") {
+					t.Fatalf("scoped result: %v %v", hits, err)
+				}
+			}
+			db.MustExec(`ALTER TABLE ai_assistant_knowledge_items DROP COLUMN knowledge_item_id CASCADE`)
+			if hits, err := engine.SearchAssistantKnowledge(ctx, 1, "neutral", 5); err == nil || len(hits) != 0 {
+				t.Fatal("broken grant lookup did not fail closed")
+			}
+		})
+	}
+}
 
 func TestAssistantKnowledgeCanary(t *testing.T) {
 	db := testutil.NewDB(t, "knowledge_canary")

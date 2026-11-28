@@ -61,3 +61,26 @@ func TestKnowledgeMigrationSchema(t *testing.T) {
 	db.MustExec(`DELETE FROM ai_knowledge_base`)
 	count(0)
 }
+
+// A missing dependency must stop startup/upgrade, not leave a half-installed
+// grant table. Repairing it and retrying must still produce an empty grant set.
+func TestKnowledgeMigrationInterrupted(t *testing.T) {
+	db := testutil.NewDB(t, "knowledge_interrupted")
+	db.MustExec(`DROP TABLE ai_assistant_knowledge_items;
+		ALTER TABLE ai_knowledge_base RENAME TO temporarily_missing_items`)
+	if err := V2_10_0_RC4(db, nil, nil); err == nil {
+		t.Fatal("migration succeeded without the item FK target")
+	}
+	var absent bool
+	if err := db.Get(&absent, `SELECT to_regclass('ai_assistant_knowledge_items') IS NULL`); err != nil || !absent {
+		t.Fatalf("partial migration left a grant table: absent=%v err=%v", absent, err)
+	}
+	db.MustExec(`ALTER TABLE temporarily_missing_items RENAME TO ai_knowledge_base`)
+	if err := V2_10_0_RC4(db, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.Get(&n, `SELECT count(*) FROM ai_assistant_knowledge_items`); err != nil || n != 0 {
+		t.Fatalf("retry grants=%d err=%v", n, err)
+	}
+}
