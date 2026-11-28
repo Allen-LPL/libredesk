@@ -299,6 +299,8 @@ func initHandlers(g *fastglue.Fastglue, hub *ws.Hub) {
 	g.GET("/api/v1/ai/assistants/compact", auth(handleGetAIAssistantsCompact))
 	g.GET("/api/v1/ai/assistants", perm(handleGetAIAssistants, "ai:manage"))
 	g.GET("/api/v1/ai/assistants/{id}", perm(handleGetAIAssistant, "ai:manage"))
+	g.GET("/api/v1/ai/assistants/{id}/knowledge-items", perm(handleGetAssistantKnowledgeItems, "ai:manage"))
+	g.PUT("/api/v1/ai/assistants/{id}/knowledge-items", perm(handleReplaceAssistantKnowledgeItems, "ai:manage"))
 	g.POST("/api/v1/ai/assistants", perm(handleCreateAIAssistant, "ai:manage"))
 	g.PUT("/api/v1/ai/assistants/{id}", perm(clearsHCCache(handleUpdateAIAssistant), "ai:manage"))
 	g.DELETE("/api/v1/ai/assistants/{id}", perm(clearsHCCache(handleDeleteAIAssistant), "ai:manage"))

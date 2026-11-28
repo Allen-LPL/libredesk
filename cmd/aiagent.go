@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"mime/multipart"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	amodels "github.com/abhinavxd/libredesk/internal/aiagent/models"
@@ -16,6 +18,51 @@ import (
 type compactAssistant struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type assistantKnowledgeItems struct {
+	IDs []int `json:"knowledge_item_ids"`
+}
+
+func knowledgeAssistantID(r *fastglue.Request) (int, error) {
+	id, err := strconv.Atoi(r.RequestCtx.UserValue("id").(string))
+	if err != nil || id <= 0 {
+		return 0, envelope.NewError(envelope.InputError, r.Context.(*App).i18n.T("validation.invalidValue"), nil)
+	}
+	if id > math.MaxInt32 {
+		return 0, envelope.NewError(envelope.NotFoundError, r.Context.(*App).i18n.T("globals.messages.notFound"), nil)
+	}
+	return id, nil
+}
+
+func handleGetAssistantKnowledgeItems(r *fastglue.Request) error {
+	id, err := knowledgeAssistantID(r)
+	if err != nil {
+		return sendErrorEnvelope(r, err)
+	}
+	ids, err := r.Context.(*App).aiAgent.GetKnowledgeItemIDs(r.RequestCtx, id)
+	if err != nil {
+		return sendErrorEnvelope(r, err)
+	}
+	return r.SendEnvelope(assistantKnowledgeItems{IDs: ids})
+}
+
+func handleReplaceAssistantKnowledgeItems(r *fastglue.Request) error {
+	id, err := knowledgeAssistantID(r)
+	if err != nil {
+		return sendErrorEnvelope(r, err)
+	}
+	app := r.Context.(*App)
+	var req assistantKnowledgeItems
+	if err := json.Unmarshal(r.RequestCtx.PostBody(), &req); err != nil {
+		return sendErrorEnvelope(r, envelope.NewError(envelope.InputError, app.i18n.T("errors.parsingRequest"), nil))
+	}
+	actor := r.RequestCtx.UserValue("user").(authmodels.User)
+	if err := app.aiAgent.ReplaceKnowledgeItemIDs(r.RequestCtx, id, req.IDs, actor.ID); err != nil {
+		return sendErrorEnvelope(r, err)
+	}
+	slices.Sort(req.IDs)
+	return r.SendEnvelope(req)
 }
 
 // handleGetAIAssistants returns all AI assistants.
