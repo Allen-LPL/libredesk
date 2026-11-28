@@ -229,6 +229,27 @@
       </div>
     </div>
 
+    <fieldset class="space-y-2" :disabled="formLoading">
+      <legend class="text-sm font-medium">{{ t('admin.ai.assistant.knowledgeItems') }}</legend>
+      <p v-if="knowledgeState === 'loading'" class="ui-description">
+        {{ t('globals.terms.loading') }}
+      </p>
+      <div v-else-if="knowledgeState === 'error'" role="alert">
+        {{ t('admin.ai.assistant.knowledgeLoadError') }}
+        <Button type="button" variant="outline" @click="loadKnowledge">{{
+          t('admin.ai.assistant.retryKnowledge')
+        }}</Button>
+      </div>
+      <template v-else>
+        <label v-for="item in snippets" :key="item.id" class="flex items-center gap-2 text-sm">
+          <input type="checkbox" v-model="knowledgeIDs" :value="item.id" />
+          {{ item.title }} <span v-if="!item.enabled">({{ t('globals.terms.disabled') }})</span>
+        </label>
+        <p v-if="!knowledgeIDs.length" class="ui-description">
+          {{ t('admin.ai.assistant.knowledgeEmpty') }}
+        </p>
+      </template>
+    </fieldset>
     <div class="flex justify-end mt-10">
       <Button type="submit" :isLoading="formLoading">
         {{ isEditing ? t('globals.messages.save') : t('globals.messages.create') }}
@@ -293,6 +314,34 @@ const formLoading = ref(false)
 const tools = ref([])
 const teams = ref([])
 const selectedToolIds = ref([])
+const snippets = ref([])
+const knowledgeState = ref('loading')
+const knowledgeIDs = ref([])
+const savedIDs = ref([])
+let loadGeneration = 0
+const loadKnowledge = async () => {
+  const generation = ++loadGeneration
+  const id = props.initialValues.id
+  knowledgeState.value = 'loading'
+  if (props.isEditing && !id) return
+  try {
+    const [items, grants] = await Promise.all([
+      api.getAISnippets(),
+      id ? api.getAIAssistantKnowledgeItems(id) : null
+    ])
+    if (generation !== loadGeneration) return
+    const ids = id ? grants.data.data.knowledge_item_ids : []
+    if (!Array.isArray(ids) || !ids.every((n) => Number.isSafeInteger(n) && n > 0))
+      throw new Error()
+    snippets.value = items.data.data.map(({ id, title, enabled }) => ({ id, title, enabled }))
+    savedIDs.value = [...ids]
+    knowledgeIDs.value = [...ids]
+    knowledgeState.value = 'ready'
+  } catch {
+    if (generation === loadGeneration) knowledgeState.value = 'error'
+  }
+}
+watch(() => props.initialValues.id, loadKnowledge, { immediate: true })
 const avatarFile = ref(null)
 const avatarPreview = ref('')
 const removeAvatar = ref(false)
@@ -434,7 +483,14 @@ const onSubmit = form.handleSubmit(async (values) => {
     if (avatarFile.value) {
       formData.append('files', avatarFile.value)
     }
-    await props.submitForm(formData)
+    const generation = loadGeneration
+    const changed =
+      knowledgeState.value === 'ready' &&
+      (savedIDs.value.length !== knowledgeIDs.value.length ||
+        knowledgeIDs.value.some((id) => !savedIDs.value.includes(id)))
+    const ids = changed ? [...knowledgeIDs.value] : undefined
+    if ((await props.submitForm(formData, ids)) && ids && generation === loadGeneration)
+      savedIDs.value = ids
   } finally {
     formLoading.value = false
   }

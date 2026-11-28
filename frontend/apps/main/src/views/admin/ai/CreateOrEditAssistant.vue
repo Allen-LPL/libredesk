@@ -29,6 +29,8 @@
 
           <TabsContent value="settings">
             <AssistantForm
+              v-if="String(assistant.id) === id"
+              :key="id"
               :initial-values="assistant"
               :is-editing="true"
               :submit-form="submitForm"
@@ -286,23 +288,35 @@ const breadcrumbLinks = [
   { path: '', label: props.id ? t('admin.ai.assistant.edit') : t('admin.ai.assistant.new') }
 ]
 
-const submitForm = async (values) => {
+const createdID = ref(null)
+const submitForm = async (values, knowledgeIDs) => {
+  const routeID = props.id
+  let id = routeID || createdID.value
+  let profileSaved = false
   try {
-    if (props.id) {
-      await api.updateAIAssistant(props.id, values)
+    if (id) {
+      await api.updateAIAssistant(id, values)
     } else {
-      await api.createAIAssistant(values)
-      router.push({ name: 'ai-assistants' })
+      const response = await api.createAIAssistant(values)
+      id = response.data.data.id
+      if (props.id === routeID) createdID.value = id
     }
+    profileSaved = true
     aiAssistantStore.invalidate()
+    if (knowledgeIDs !== undefined) await api.replaceAIAssistantKnowledgeItems(id, knowledgeIDs)
+    if (!routeID && props.id === routeID) router.push({ name: 'ai-assistants' })
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       description: t('globals.messages.savedSuccessfully')
     })
+    return true
   } catch (error) {
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       variant: 'destructive',
-      description: handleHTTPError(error).message
+      description: profileSaved
+        ? t('admin.ai.assistant.knowledgeSaveError')
+        : handleHTTPError(error).message
     })
+    return false
   }
 }
 
@@ -351,18 +365,19 @@ const selectRange = (option) => {
 }
 
 const loadAssistant = async () => {
+  const id = props.id
   if (!props.id) return
   try {
     isLoading.value = true
     const [assistantResp] = await Promise.all([api.getAIAssistant(props.id), fetchStats()])
-    assistant.value = assistantResp.data.data
+    if (props.id === id) assistant.value = assistantResp.data.data
   } catch (error) {
     emitter.emit(EMITTER_EVENTS.SHOW_TOAST, {
       variant: 'destructive',
       description: handleHTTPError(error).message
     })
   } finally {
-    isLoading.value = false
+    if (props.id === id) isLoading.value = false
   }
 }
 
@@ -372,6 +387,8 @@ onMounted(loadAssistant)
 watch(
   () => props.id,
   () => {
+    createdID.value = null
+    assistant.value = {}
     previewMessage.value = ''
     previewReply.value = ''
     previewSources.value = []

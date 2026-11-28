@@ -527,6 +527,9 @@ const previewAIAssistant = (id, data) =>
 const getAIAssistantStats = (id, range) =>
   http.get(`/api/v1/ai/assistants/${id}/stats`, { params: range ? { range } : {} })
 const getAISnippets = () => http.get('/api/v1/ai/snippets')
+const getAIAssistantKnowledgeItems = (id) => http.get(`/api/v1/ai/assistants/${id}/knowledge-items`)
+const replaceAIAssistantKnowledgeItems = (id, ids) =>
+  http.put(`/api/v1/ai/assistants/${id}/knowledge-items`, { knowledge_item_ids: ids })
 const createAISnippet = (data) => http.post('/api/v1/ai/snippets', data)
 const importAISnippetFromURL = (data) =>
   http.post('/api/v1/ai/snippets/import-url', data, { timeout: AI_TIMEOUT })
@@ -831,6 +834,8 @@ export default {
   previewAIAssistant,
   getAIAssistantStats,
   getAISnippets,
+  getAIAssistantKnowledgeItems,
+  replaceAIAssistantKnowledgeItems,
   createAISnippet,
   importAISnippetFromURL,
   updateAISnippet,
