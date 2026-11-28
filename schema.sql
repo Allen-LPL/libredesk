@@ -868,6 +868,14 @@ CREATE TABLE ai_assistants (
 );
 CREATE INDEX index_ai_assistants_on_user_id ON ai_assistants(user_id);
 
+DROP TABLE IF EXISTS ai_assistant_knowledge_items CASCADE;
+CREATE TABLE ai_assistant_knowledge_items (
+	assistant_id INTEGER NOT NULL REFERENCES ai_assistants(id) ON DELETE CASCADE,
+	knowledge_item_id INTEGER NOT NULL REFERENCES ai_knowledge_base(id) ON DELETE CASCADE,
+	PRIMARY KEY (assistant_id, knowledge_item_id)
+);
+CREATE INDEX index_ai_assistant_knowledge_items_on_item ON ai_assistant_knowledge_items(knowledge_item_id, assistant_id);
+
 DROP TABLE IF EXISTS ai_assistant_tools CASCADE;
 CREATE TABLE ai_assistant_tools (
 	id SERIAL PRIMARY KEY,
